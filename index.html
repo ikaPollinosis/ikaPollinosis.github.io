@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <title>贝斯自动视奏</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --card:#141c31; --card2:#1b2640; --text:#f5f7ff; --muted:#94a3b8; --accent:#7c9cff; --accent2:#a78bfa; --line:rgba(255,255,255,.1); }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:radial-gradient(circle at 20% 0%, #25345d 0%, transparent 42%), var(--bg); color:var(--text); font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    .app { width:min(100%, 560px); margin:0 auto; padding:24px 16px 28px; }
+    header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:18px; }
+    h1 { font-size:24px; line-height:1.15; margin:0 0 6px; letter-spacing:-.04em; }
+    .subtitle { color:var(--muted); font-size:13px; }
+    .key-pill { background:rgba(124,156,255,.14); border:1px solid rgba(124,156,255,.32); color:#cbd6ff; padding:8px 10px; border-radius:999px; font-size:13px; white-space:nowrap; }
+    .panel { background:linear-gradient(145deg,rgba(27,38,64,.95),rgba(20,28,49,.95)); border:1px solid var(--line); border-radius:22px; padding:18px; box-shadow:0 16px 40px rgba(0,0,0,.22); margin-bottom:14px; }
+    .controls { display:grid; gap:15px; }
+    .bpm-row { display:flex; justify-content:space-between; align-items:center; }
+    .label { font-size:14px; color:var(--muted); }
+    .bpm-value { font-variant-numeric:tabular-nums; font-size:34px; font-weight:750; letter-spacing:-.05em; }
+    .bpm-value span { font-size:13px; color:var(--muted); font-weight:500; letter-spacing:0; margin-left:3px; }
+    input[type=range] { width:100%; accent-color:var(--accent); }
+    .range-meta { display:flex; justify-content:space-between; color:var(--muted); font-size:11px; margin-top:-7px; }
+    .button-row { display:flex; gap:10px; }
+    button { border:0; color:var(--text); font:inherit; font-weight:650; border-radius:13px; min-height:46px; padding:0 16px; cursor:pointer; transition:transform .15s,filter .15s,background .15s; }
+    button:active { transform:scale(.97); }
+    .primary { flex:1; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#0c1224; }
+    .secondary { background:#273454; color:#e7ebff; }
+    .toggle-row { display:flex; align-items:center; justify-content:space-between; color:#d6ddf5; font-size:13px; }
+    .switch { position:relative; width:44px; height:25px; }
+    .switch input { opacity:0; width:0; height:0; }
+    .slider { position:absolute; inset:0; background:#33415f; border-radius:999px; cursor:pointer; transition:.2s; }
+    .slider:before { content:""; position:absolute; width:19px; height:19px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; }
+    .switch input:checked + .slider { background:var(--accent); }
+    .switch input:checked + .slider:before { transform:translateX(19px); }
+    .practice-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .practice-title { font-weight:700; font-size:15px; }
+    .status { color:var(--muted); font-size:12px; }
+    .measure-label { color:var(--muted); font-size:11px; margin:10px 0 7px; }
+    .measure { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+    .note { position:relative; min-width:0; height:92px; border-radius:15px; background:#1b2742; border:1px solid rgba(255,255,255,.06); display:flex; flex-direction:column; align-items:center; justify-content:center; transition:background .2s,transform .2s,border-color .2s; }
+    .note-name { font-size:11px; color:#aebce3; min-height:16px; }
+    .note-number { font-size:34px; line-height:1; font-weight:780; margin-top:4px; }
+    .note-number.low::after { content:""; display:block; width:5px; height:5px; background:currentColor; border-radius:50%; margin:4px auto 0; }
+    .note.playing { background:linear-gradient(145deg,#405eb4,#674da9); border-color:#9eaeff; transform:translateY(-3px) scale(1.08); box-shadow:0 8px 20px rgba(84,105,207,.28); }
+    .note.playing .note-name { color:#e8ecff; }
+    .legend { margin-top:13px; font-size:12px; color:var(--muted); line-height:1.55; }
+    .legend b { color:#d9e0ff; }
+    @media (max-width:380px) { .app{padding-left:12px;padding-right:12px}.panel{padding:15px}.note{height:84px}.note-number{font-size:30px} }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div><h1>贝斯自动视奏</h1><div class="subtitle">看数字、跟节拍、直接找指板位置</div></div>
+      <div class="key-pill" id="keyPill">C 大调</div>
+    </header>
+
+    <section class="panel controls" aria-label="练习控制">
+      <div class="bpm-row"><div class="label">速度 BPM</div><div class="bpm-value"><span id="bpmValue">80</span><span>BPM</span></div></div>
+      <div><input id="bpm" type="range" min="40" max="180" value="80" step="1" aria-label="速度 BPM"><div class="range-meta"><span>40</span><span>180</span></div></div>
+      <div class="button-row"><button class="primary" id="playBtn">▶ 播放</button><button class="secondary" id="rollBtn">🎲 随机调号</button></div>
+      <div class="toggle-row"><span>每轮自动随机调号</span><label class="switch"><input id="autoKey" type="checkbox"><span class="slider"></span></label></div>
+    </section>
+
+    <section class="panel">
+      <div class="practice-head"><div class="practice-title">简谱练习</div><div class="status" id="status">已暂停</div></div>
+      <div class="measure-label">正在演奏</div>
+      <div class="measure" id="currentMeasure"></div>
+      <div class="measure-label">下一小节</div>
+      <div class="measure" id="nextMeasure"></div>
+      <div class="legend"><b>下方圆点</b>表示低音区；无圆点表示中音区。每个数字按从左到右依次放大，亮起的数字就是当前音符。</div>
+    </section>
+  </main>
+
+  <script>
+    const keys = [
+      {name:'C', root:0, names:['C','D','E','F','G','A','B']}, {name:'D♭', root:1, names:['D♭','E♭','F','G♭','A♭','B♭','C']},
+      {name:'D', root:2, names:['D','E','F♯','G','A','B','C♯']}, {name:'E♭', root:3, names:['E♭','F','G','A♭','B♭','C','D']},
+      {name:'E', root:4, names:['E','F♯','G♯','A','B','C♯','D♯']}, {name:'F', root:5, names:['F','G','A','B♭','C','D','E']},
+      {name:'F♯', root:6, names:['F♯','G♯','A♯','B','C♯','D♯','E♯']}, {name:'G', root:7, names:['G','A','B','C','D','E','F♯']},
+      {name:'A♭', root:8, names:['A♭','B♭','C','D♭','E♭','F','G']}, {name:'A', root:9, names:['A','B','C♯','D','E','F♯','G♯']},
+      {name:'B♭', root:10, names:['B♭','C','D','E♭','F','G','A']}, {name:'B', root:11, names:['B','C♯','D♯','E','F♯','G♯','A♯']}
+    ];
+    const bpm = document.querySelector('#bpm'), bpmValue = document.querySelector('#bpmValue');
+    const playBtn = document.querySelector('#playBtn'), rollBtn = document.querySelector('#rollBtn'), autoKey = document.querySelector('#autoKey');
+    const currentEl = document.querySelector('#currentMeasure'), nextEl = document.querySelector('#nextMeasure');
+    const keyPill = document.querySelector('#keyPill'), status = document.querySelector('#status');
+    let state = { playing:false, key:keys[0], current:[], next:[], index:0, timer:null };
+
+    function randomNote(){ return { degree:Math.floor(Math.random()*7), low:Math.random()<.5 }; }
+    function newMeasure(){ return Array.from({length:4}, randomNote); }
+    function noteName(note){ return state.key.names[note.degree]; }
+    function makeNote(note, i){
+      const el=document.createElement('div'); el.className='note'; el.dataset.index=i;
+      const name=document.createElement('div'); name.className='note-name'; name.textContent=noteName(note);
+      const num=document.createElement('div'); num.className='note-number'+(note.low?' low':''); num.textContent=String(note.degree+1);
+      el.append(name,num); return el;
+    }
+    function render(){
+      keyPill.textContent=state.key.name+' 大调'; currentEl.innerHTML=''; nextEl.innerHTML='';
+      state.current.forEach((n,i)=>currentEl.append(makeNote(n,i))); state.next.forEach((n,i)=>nextEl.append(makeNote(n,i)));
+      [...currentEl.children].forEach((el,i)=>el.classList.toggle('playing',state.playing&&i===state.index));
+    }
+    function rollKey(){ state.key=keys[Math.floor(Math.random()*keys.length)]; render(); }
+    function advance(){
+      state.index++;
+      if(state.index>=4){ state.index=0; state.current=state.next; state.next=newMeasure(); if(autoKey.checked) rollKey(); }
+      render();
+    }
+    function restartTimer(){ clearInterval(state.timer); if(state.playing) state.timer=setInterval(advance,60000/Number(bpm.value)); }
+    function setPlaying(on){ state.playing=on; playBtn.textContent=on?'Ⅱ 暂停':'▶ 播放'; status.textContent=on?'播放中':'已暂停'; render(); restartTimer(); }
+    bpm.addEventListener('input',()=>{ bpmValue.textContent=bpm.value; restartTimer(); });
+    playBtn.addEventListener('click',()=>setPlaying(!state.playing));
+    rollBtn.addEventListener('click',rollKey);
+    state.current=newMeasure(); state.next=newMeasure(); render();
+  </script>
+</body>
+</html>
