@@ -66,6 +66,7 @@
     .duration-label { font-size:9px; margin-top:14px; color:#b9c5e6; }
     .extension,.augmentation { font-size:20px; }
     .rest { color:#c5ccdd; }
+    #keySelect { font:inherit; color:var(--text); background:#273454; border:1px solid var(--line); border-radius:12px; padding:12px; min-width:150px; }
   </style>
 </head>
 <body>
@@ -78,6 +79,7 @@
     <section class="panel controls" aria-label="练习控制">
       <div class="bpm-row"><div class="label">速度 BPM</div><div class="bpm-value"><span id="bpmValue">80</span><span>BPM</span></div></div>
       <div><input id="bpm" type="range" min="40" max="180" value="80" step="1" aria-label="速度 BPM"><div class="range-meta"><span>40</span><span>180</span></div></div>
+      <div class="bpm-row"><label class="label" for="keySelect">主音 / 大调</label><select id="keySelect" aria-label="选择大调"></select></div>
       <div class="button-row"><button class="primary" id="playBtn">▶ 播放</button><button class="secondary" id="rollBtn">🎲 随机调号</button></div>
       <div class="legend" id="audioHint" role="status">点击播放后，音符随高亮发声。</div>
     </section>
@@ -92,7 +94,7 @@
     </section>
   </main>
 
-  <dialog id="settings" aria-labelledby="settingsTitle"><div class="drawer-head"><h2 id="settingsTitle">练习设置</h2><button class="secondary" id="closeSettings" aria-label="关闭设置">✕</button></div><h3>调号与音区</h3>      <div class="toggle-row"><span>每轮自动随机调号</span><label class="switch"><input id="autoKey" type="checkbox"><span class="slider"></span></label></div>
+  <dialog id="settings" aria-labelledby="settingsTitle"><div class="drawer-head"><h2 id="settingsTitle">练习设置</h2><button class="secondary" id="closeSettings" aria-label="关闭设置">✕</button></div><h3>声音</h3><div class="toggle-row"><span>节拍器 · 每拍发声</span><label class="switch"><input id="metronomeEnabled" aria-label="启用节拍器" type="checkbox"><span class="slider"></span></label></div><p class="legend">随播放开始、暂停停止；每小节第一拍为重音。</p><h3>调号与音区</h3>      <div class="toggle-row"><span>每轮自动随机调号</span><label class="switch"><input id="autoKey" type="checkbox"><span class="slider"></span></label></div>
       <div class="toggle-row"><span>低音组 · 下方点</span><label class="switch"><input id="lowEnabled" aria-label="启用低音组" type="checkbox" checked><span class="slider"></span></label></div>
       <div class="toggle-row"><span>高音组 · 上方点</span><label class="switch"><input id="highEnabled" aria-label="启用高音组" type="checkbox" checked><span class="slider"></span></label></div><h3>节奏时值</h3><div class="toggle-row"><span>二分 · 2 拍</span><label class="switch"><input id="halfEnabled" aria-label="二分 · 2 拍" type="checkbox" checked><span class="slider"></span></label></div>
 <div class="toggle-row"><span>附点四分 · 1.5 拍</span><label class="switch"><input id="dottedEnabled" aria-label="附点四分 · 1.5 拍" type="checkbox" checked><span class="slider"></span></label></div>
@@ -106,6 +108,9 @@
       {name:'A♭', root:8, names:['A♭','B♭','C','D♭','E♭','F','G']}, {name:'A', root:9, names:['A','B','C♯','D','E','F♯','G♯']},
       {name:'B♭', root:10, names:['B♭','C','D','E♭','F','G','A']}, {name:'B', root:11, names:['B','C♯','D♯','E','F♯','G♯','A♯']}
     ];
+    const keySelect=document.querySelector('#keySelect');
+    keys.forEach((key,i)=>{const option=document.createElement('option'); option.value=String(i); option.textContent=key.name+' 大调'; keySelect.append(option);});
+    keySelect.addEventListener('change',()=>{autoKey.checked=false; changeKey(keys[Number(keySelect.value)]);});
     const bpm = document.querySelector('#bpm'), bpmValue = document.querySelector('#bpmValue');
     const playBtn = document.querySelector('#playBtn'), rollBtn = document.querySelector('#rollBtn'), autoKey = document.querySelector('#autoKey');
     const currentEl = document.querySelector('#currentMeasure'), nextEl = document.querySelector('#nextMeasure');
@@ -160,25 +165,50 @@
       el.append(name,notation,duration); return el;
     }
     function render(){
-      currentEl.style.gridTemplateColumns='repeat('+state.current.length+',minmax(0,1fr))'; nextEl.style.gridTemplateColumns='repeat('+state.next.length+',minmax(0,1fr))'; keyPill.textContent=state.key.name+' 大调'; currentEl.innerHTML=''; nextEl.innerHTML='';
+      currentEl.style.gridTemplateColumns='repeat('+state.current.length+',minmax(0,1fr))'; nextEl.style.gridTemplateColumns='repeat('+state.next.length+',minmax(0,1fr))'; keySelect.value=String(keys.indexOf(state.key)); keyPill.textContent=state.key.name+' 大调'; currentEl.innerHTML=''; nextEl.innerHTML='';
       state.current.forEach((n,i)=>currentEl.append(makeNote(n,i))); state.next.forEach((n,i)=>nextEl.append(makeNote(n,i)));
       [...currentEl.children].forEach((el,i)=>el.classList.toggle('playing',state.playing&&i===state.index));
     }
-    function rollKey(){ state.key=keys[Math.floor(Math.random()*keys.length)]; render(); if(state.playing) soundCurrent(); }
+    function changeKey(key){
+      if(state.playing) captureRemaining();
+      state.key=key; render();
+      if(state.playing){soundCurrent(); schedule();}
+    }
+    function rollKey(){changeKey(keys[Math.floor(Math.random()*keys.length)]);}
     function advance(){
       state.index++;
       if(state.index>=state.current.length){ state.index=0; state.current=state.next; state.next=newMeasure(); if(autoKey.checked) state.key=keys[Math.floor(Math.random()*keys.length)]; }
       remainingBeats=state.current[state.index].units/2; render(); soundCurrent(); schedule();
     }
+    const metronomeEnabled=document.querySelector('#metronomeEnabled');
+    let beatTimer=null, beatRemaining=0, beatStartedAt=0, beatBpm=Number(bpm.value), beatNumber=0;
+    const clicks=new Set();
+    function stopClicks(){for(const v of clicks){v.osc.stop(); v.osc.disconnect(); v.gain.disconnect();} clicks.clear();}
+    function clickBeat(){
+      if(!metronomeEnabled.checked || !audio || audio.state!=='running') return;
+      const now=audio.currentTime, osc=audio.createOscillator(), gain=audio.createGain();
+      osc.type='sine'; osc.frequency.value=beatNumber===0?1400:1000;
+      gain.gain.setValueAtTime(0,now); gain.gain.linearRampToValueAtTime(beatNumber===0?.23:.15,now+.002); gain.gain.exponentialRampToValueAtTime(.001,now+.045);
+      osc.connect(gain); gain.connect(audio.destination);
+      const v={osc,gain}; clicks.add(v); osc.onended=()=>{osc.disconnect();gain.disconnect();clicks.delete(v);}; osc.start(now); osc.stop(now+.05);
+    }
+    function captureBeat(){if(state.playing) beatRemaining=Math.max(0,beatRemaining-(performance.now()-beatStartedAt)*beatBpm/60000); clearTimeout(beatTimer);}
+    function scheduleBeat(){
+      clearTimeout(beatTimer); if(!state.playing) return;
+      beatBpm=Number(bpm.value); beatStartedAt=performance.now();
+      if(beatRemaining<=.000001){clickBeat(); beatNumber=(beatNumber+1)%4; beatRemaining=1;}
+      beatTimer=setTimeout(()=>{beatRemaining=0;scheduleBeat();},beatRemaining*60000/beatBpm);
+    }
+    metronomeEnabled.addEventListener('change',()=>{if(!metronomeEnabled.checked) stopClicks();});
     let remainingBeats=0, startedAt=0, activeBpm=Number(bpm.value);
     function captureRemaining(){ if(state.playing) remainingBeats=Math.max(0,remainingBeats-(performance.now()-startedAt)*activeBpm/60000); clearTimeout(state.timer); }
     function schedule(){ clearTimeout(state.timer); if(state.playing){ activeBpm=Number(bpm.value); startedAt=performance.now(); state.timer=setTimeout(advance,remainingBeats*60000/activeBpm); } }
     function setPlaying(on){
-      if(!on) captureRemaining();
+      if(!on){captureRemaining(); captureBeat();}
       state.playing=on; playBtn.textContent=on?'Ⅱ 暂停':'▶ 播放'; status.textContent=on?'播放中':'已暂停'; render();
-      if(on){ soundCurrent(); schedule(); } else stopSound();
+      if(on){ soundCurrent(); schedule(); scheduleBeat(); } else {stopSound(); stopClicks();}
     }
-    bpm.addEventListener('input',()=>{ captureRemaining(); bpmValue.textContent=bpm.value; if(state.playing){ soundCurrent(); schedule(); } });
+    bpm.addEventListener('input',()=>{ captureRemaining(); captureBeat(); bpmValue.textContent=bpm.value; if(state.playing){ soundCurrent(); schedule(); scheduleBeat(); } });
     playBtn.addEventListener('click',async()=>{
       if(starting) return;
       if(state.playing){ setPlaying(false); return; }
